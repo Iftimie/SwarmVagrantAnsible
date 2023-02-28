@@ -10,7 +10,38 @@ services:
     image: nginx
     ports:
       - "9999:9999"
+      - "8887:8887"
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
     depends_on:
       - app
+      - swarmpit
+
+  swarmpit:
+    image: swarmpit/swarmpit:latest
+    environment:
+      - SWARMPIT_DB=http://db:5984
+      - SWARMPIT_INFLUXDB=http://influxdb:8086
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      placement:
+        constraints:
+          - node.role == manager
+
+  db:
+    image: couchdb:2.3.0
+
+  influxdb:
+    image: influxdb:1.7
+
+  agent:
+    image: swarmpit/agent:latest
+    environment:
+      - DOCKER_API_VERSION=1.35
+      - HEALTH_CHECK_ENDPOINT=http://swarmpit:8080/version
+      - EVENT_ENDPOINT=http://swarmpit:8080/events
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    deploy:
+      mode: global

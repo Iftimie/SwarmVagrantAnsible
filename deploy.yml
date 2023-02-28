@@ -1,0 +1,61 @@
+- name: Build and Deploy
+  hosts: master
+  become: true
+  gather_facts: False
+
+  tasks:
+    - name: Creates working directory
+      file:
+        path: /tmp/work/
+        state: directory
+
+    - name: Copy source files for stack
+      copy: 
+        src: "{{ item.src }}" 
+        dest: "{{ item.dest }}"
+      loop:
+        - src: app.py
+          dest: /tmp/work/app.py
+        - src: Dockerfile
+          dest: /tmp/work/Dockerfile
+        - src: docker-compose.yml
+          dest: /tmp/work/docker-compose.yml
+        - src: nginx.conf
+          dest: /tmp/work/nginx.conf
+
+    - name: Setup docker registry
+      community.docker.docker_swarm_service:
+        name: registry
+        image: registry:2
+        publish:
+          - published_port: 5000
+            target_port: 5000
+
+    - name: "Wait for registry to come up"
+      uri:
+        url: "http://localhost:5000/v2/"
+        status_code: 200
+      register: result
+      until: result.status == 200
+      retries: 60
+      delay: 1
+
+    - name: Build and push to local registry
+      docker_image:
+        build:
+          path: /tmp/work
+        name: 127.0.0.1:5000/app:latest
+        source: build
+        force_source: true
+        push: yes
+
+    - name: Deploy stack to swarm from a compose file
+      docker_stack:
+        name: mystack
+        compose:
+          - /tmp/work/docker-compose.yml
+          - version: '3.3'
+            services:
+              app:
+                image: 127.0.0.1:5000/app:latest
+      timeout: 180
